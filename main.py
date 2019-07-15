@@ -1,3 +1,4 @@
+import os
 import dash
 import dash_core_components as dcc
 import dash_html_components as html
@@ -151,4 +152,5 @@ def compute_figure_data(df):
 
 
 if __name__ == '__main__':
-    app.run_server(debug=True)
+    is_debug = True if os.environ.get('DEBUG', False) else False
+    app.run_server(debug=is_debug, host='0.0.0.0', port=int(os.environ.get('PORT', 0)))
