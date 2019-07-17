@@ -3,6 +3,7 @@ import os
 import dash
 import dash_core_components as dcc
 import dash_html_components as html
+import dash_table
 from dash.dependencies import Output, Input, State
 import pandas
 import pandas_datareader.data
@@ -16,6 +17,7 @@ MAX_YEAR = 2019
 external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
 
 app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
+app.title = 'Stock Insights'
 app.layout = html.Div(children=[
     html.H1(children='Seasonality analysis of stock quotes'),
 
@@ -25,11 +27,13 @@ app.layout = html.Div(children=[
                 [
                     html.Div(
                         [
-                            html.Label(['Stock code'], htmlFor='stock-code'),
+                            html.Label(['Stock code on MOEX'], htmlFor='stock-code'),
                             dcc.Dropdown(
                                 id='stock-code',
-                                options=[{'label': '{} / {} ({})'.format(e, stock_list[e]['name'], stock_list[e]['type']), 'value': e} for e in
-                                         stock_list],
+                                options=[
+                                    {'label': '{} / {} ({})'.format(e, stock_list[e]['name'], stock_list[e]['type']),
+                                     'value': e} for e in
+                                    stock_list],
                                 optionHeight=60,
                             ),
                             html.Br(),
@@ -63,6 +67,16 @@ app.layout = html.Div(children=[
                                     {'label': 'Additive', 'value': 'additive'},
                                 ],
                                 value='multiplicative'
+                            ),
+                            html.Br(),
+                            html.Label(['Seasonality graph type'], htmlFor='seasonality-graph-type'),
+                            dcc.RadioItems(
+                                id='seasonality-graph-type',
+                                options=[
+                                    {'label': 'Smooth', 'value': 'smooth'},
+                                    {'label': 'Raw', 'value': 'raw'},
+                                ],
+                                value='smooth'
                             )
                         ],
                         style={'position': 'sticky', 'top': '0'}
@@ -72,18 +86,29 @@ app.layout = html.Div(children=[
             ),
             html.Div(
                 [
-                    dcc.Graph(
-                        id='quotes-graph',
-                    ),
-                    dcc.Graph(
-                        id='trend-graph',
-                    ),
-                    dcc.Graph(
-                        id='seasonality-graph',
-                    ),
-                    dcc.Graph(
-                        id='residual-graph',
-                    )
+                    dcc.Loading(
+                        [
+                            dcc.Graph(
+                                id='quotes-graph',
+                            ),
+                            dcc.Graph(
+                                id='trend-graph',
+                            ),
+                            dcc.Graph(
+                                id='seasonality-graph',
+                            ),
+                            dcc.Graph(
+                                id='residual-graph',
+                            ),
+                            html.Label(['Residual stats'], htmlFor='residual-stats'),
+                            dash_table.DataTable(
+                                id='residual-stats',
+                                columns=[
+                                    {"name": 'Stat', "id": 'index'},
+                                    {"name": 'Value', "id": 'CLOSE'},
+                                ]
+                            )
+                        ]),
                 ],
                 style={'width': '100px', 'margin': '10px', 'flex-grow': '3'}
             ),
@@ -93,27 +118,30 @@ app.layout = html.Div(children=[
     )
 ])
 
+
 @app.callback(
     [
         Output('quotes-graph', 'figure'),
         Output('trend-graph', 'figure'),
         Output('seasonality-graph', 'figure'),
         Output('residual-graph', 'figure'),
-        Output('quotes-storage', 'children')
+        Output('residual-stats', 'data'),
+        Output('quotes-storage', 'children'),
     ],
     [
         Input('stock-code', 'value'),
         Input('date-range', 'value'),
         Input('period', 'value'),
         Input('analysis-type', 'value'),
+        Input('seasonality-graph-type', 'value'),
     ],
     [
         State('quotes-storage', 'children')
     ]
 )
-def draw_seasonal_plots(stock_code, date_range, period, analysis_type, quotes_storage):
+def draw_seasonal_plots(stock_code, date_range, period, analysis_type, seasonality_graph_type, quotes_storage):
     if not stock_code:
-        return [{}, {}, {}, {}, quotes_storage]
+        return [{}, {}, {}, {}, [], quotes_storage]
 
     start_date = '{}-01-01'.format(date_range[0])
     end_date = '{}-01-01'.format(date_range[1] + 1)
@@ -173,7 +201,7 @@ def draw_seasonal_plots(stock_code, date_range, period, analysis_type, quotes_st
             }
         },
         {
-            'data': [compute_seasonal_figure_data(quotes_part.seasonal, period)],
+            'data': [compute_seasonal_figure_data(quotes_part.seasonal, period, seasonality_graph_type)],
             'layout': {
                 'title': 'Seasonality'
             }
@@ -184,6 +212,7 @@ def draw_seasonal_plots(stock_code, date_range, period, analysis_type, quotes_st
                 'title': 'Residual'
             }
         },
+        quotes_part.resid.describe(include='all').reset_index().to_dict('records'),
         json.dumps({
             'stock_code': stock_code,
             'start_date': start_date,
@@ -203,7 +232,12 @@ def compute_figure_data(df):
     return result
 
 
-def compute_seasonal_figure_data(df, period):
+def compute_seasonal_figure_data(df, period, seasonality_graph_type):
+    if seasonality_graph_type == 'smooth':
+        # TODO: for OBUV - this xxx doesn't handle missing values
+        df_part = seasonal_decompose(df, freq=30)
+        df = df_part.trend
+
     months = {
         1: 'Jan',
         2: 'Feb',
@@ -226,7 +260,7 @@ def compute_seasonal_figure_data(df, period):
         if day > period:
             break
 
-        result['x'].append('{} {}'.format(months.get(date.month,  '?'), date.day))
+        result['x'].append('{} {}'.format(months.get(date.month, '?'), date.day))
         result['y'].append(row['CLOSE'])
         date = date + pandas.Timedelta('1 days')
         day += 1
