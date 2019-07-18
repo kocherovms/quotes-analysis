@@ -155,18 +155,15 @@ def draw_seasonal_plots(stock_code, date_range, period, analysis_type, seasonali
             quotes_storage.get('end_date', '') == end_date:
         quotes = pandas.read_json(quotes_storage.get('quotes', None))
     else:
-        quotes = pandas.DataFrame()
-        df = pandas_datareader.data.DataReader('{}.ME'.format(stock_code), 'yahoo', start_date, end_date)
-        df['SECID'] = stock_code
-        df = df.rename(index=str, columns={'Close': 'CLOSE'})
-        df = df[['SECID', 'CLOSE']]
-        df.index = pandas.to_datetime(df.index, format="%Y-%m-%d")
-        quotes = quotes.append(df)
+        quotes = pandas_datareader.data.DataReader('{}.ME'.format(stock_code), 'yahoo', start_date, end_date)
+        quotes['SECID'] = stock_code
+        quotes = quotes.rename(index=str, columns={'Close': 'CLOSE'})
+        quotes = quotes[['SECID', 'CLOSE']]
+        quotes.index = pandas.to_datetime(quotes.index, format="%Y-%m-%d")
+        quotes.sort_index(inplace=True)
 
         current_date = None
         current_close = None
-
-        quotes.sort_index(inplace=True)
         new_rows = pandas.DataFrame()
 
         for index, row in quotes.iterrows():
@@ -181,6 +178,7 @@ def draw_seasonal_plots(stock_code, date_range, period, analysis_type, seasonali
             current_date = index
             current_close = row['CLOSE']
 
+        # TODO: sometimes fails here with IndexOverlap
         quotes = quotes.append(new_rows, verify_integrity=True)
         quotes.sort_index(inplace=True)
 
